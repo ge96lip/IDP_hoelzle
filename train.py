@@ -844,6 +844,12 @@ def save_plots(sex, output_dir):
     cov_file_dummy = os.path.join(out_dir, 'cov_bspline_dummy_mean.txt')
     np.savetxt(cov_file_dummy, X_dummy)
     sns.set(style='whitegrid')
+    X_te = create_design_matrix(df_patients[cols_cov],
+                                site_ids=df_patients['set'],
+                                all_sites=site_ids_tr,
+                                basis='bspline',
+                                xmin=xmin,
+                                xmax=xmax)
 
     for idp_num, idp in enumerate(idp_ids):
         idp_dir = os.path.join(out_dir, idp)
@@ -916,7 +922,7 @@ def save_plots(sex, output_dir):
         plt.xlabel('Age')
         plt.ylabel(idp)
         plt.title(idp)
-        plt.xlim((40, 90))
+        plt.xlim((50, 90))
         plt.savefig(os.path.join(output_dir, f'centiles_{idp}.png'), bbox_inches='tight')
         plt.close()
 

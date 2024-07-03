@@ -251,7 +251,7 @@ print(site_names)
 
 suffix = 'alldata'
 # initialise dataframe we will use to store quantitative metrics 
-blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis', 'R2', 'Spearman', 'Kendall'])
+blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis'])
 blr_site_metrics = pd.DataFrame(columns = ['ROI', 'set', 'MSLL', 'EV', 'SMSE', 'RMSE', 'Rho'])
 
 for idp_num, idp in enumerate(idp_ids): 
@@ -298,37 +298,9 @@ for idp_num, idp in enumerate(idp_ids):
     
     BIC = len(nm.blr.hyp) * np.log(y_tr.shape[0]) + 2 * nm.neg_log_lik
     
-    # Compute additional metrics
-    r2 = r2_score(y_te, yhat_te)
-    
-    # Filter the rows where 'set' is in the specified list
-    selected_rows = Z[Z['set'].isin(['adni', 'aibl', 'jadni', 'delcode'])]
-
-    # Select the matched column names that are present in selected_rows
-    matched_column_names_selected = [col for col in idp_ids if col in selected_rows.columns]
-    print(matched_column_names_selected)
-    
-    # Calculate the mean of the matched columns, ignoring NaN values
-    selected_rows['ROI'] = selected_rows[matched_column_names_selected].mean(axis=1, skipna=True)
-
-    # Convert the 'DX' column to an ordered integer factor
-    dx_ordered = selected_rows['DX'].astype(pd.CategoricalDtype(categories=["CN", "MCI", "AD"], ordered=True)).cat.codes
-
-    # Calculate Spearman and Kendall correlation
-    spearman_corr, _ = spearmanr(dx_ordered, selected_rows['ROI'])
-    kendall_corr, _ = kendalltau(dx_ordered, selected_rows['ROI'])
-
-    # Store results in a dictionary
-    res_stats = {
-        's2_mean': np.mean(s2_te), 
-        'spearman': spearman_corr,
-        'kendall': kendall_corr, 
-        'r2': r2
-    }
-    print(res_stats)
 
     blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, metrics['EXPV'][0], 
-                                         MSLL[0], BIC, skew, kurtosis, r2, spearman_corr, kendall_corr]
+                                         MSLL[0], BIC, skew, kurtosis]
     for num, site in enumerate(sites):
 
         y_mean_te_site = np.array([[np.mean(y_te[sites[site]])]])
@@ -410,12 +382,12 @@ residual_all = df_test[idp_ids].values - average_predictions[idp_ids].values
 
 # Convert residuals to DataFrames for further processing if needed
 
-residual_all_df = pd.DataFrame(residual_all, index=df_test.index, columns=idp_ids)
+residual_all = pd.DataFrame(residual_all, index=df_test.index, columns=idp_ids)
 
 # Add 'set' and 'DX' columns back to the residual_all_df DataFrame
 
-residual_all_df = pd.concat([df_test[['set', 'DX']], residual_all_df], axis=1)
-numerical_cols = residual_all_df.columns.difference(['set', 'DX'])
+residual_all = pd.concat([df_test[['set', 'DX']], residual_all], axis=1)
+numerical_cols = residual_all.columns.difference(['set', 'DX'])
 
 # merge the Z-scores to one dataframe 
 z_scores = load_z_scoes(idp_ids, out_dir, df_test)
@@ -470,7 +442,7 @@ print(res_stats)
 
 
 # Calculate means and standard deviations for numerical columns grouped by 'set' and 'DX'
-results = residual_all_df.groupby(['set', 'DX']).agg(
+results = residual_all.groupby(['set', 'DX']).agg(
     {col: ['mean', 'std'] for col in numerical_cols}
 ).reset_index()
 
@@ -485,7 +457,7 @@ results.to_csv(output_file, index=False)
 print(f'Results saved to {output_file}')
 
 numerical_cols = idp_ids
-results_mae = residual_all_df.groupby(['set', 'DX']).agg(
+results_mae = residual_all.groupby(['set', 'DX']).agg(
     {col: lambda x: np.mean(np.abs(x)) for col in numerical_cols}
 ).reset_index()
 
@@ -569,11 +541,25 @@ def save_plots(sex, output_dir):
     X0_dummy = np.zeros((len(xx), 2))
     X0_dummy[:, 0] = xx
     X0_dummy[:, 1] = sex
-    X_dummy = create_design_matrix(X0_dummy, xmin=xmin, xmax=xmax, site_ids=None, all_sites=None)
+    X_dummy = create_design_matrix(X0_dummy, 
+                                   xmin=xmin, 
+                                   xmax=xmax, 
+                                   site_ids=None, 
+                                   all_sites=site_ids_tr)
     cov_file_dummy = os.path.join(out_dir, 'cov_bspline_dummy_mean.txt')
     np.savetxt(cov_file_dummy, X_dummy)
     sns.set(style='whitegrid')
-    # suffix = 'testset'
+    
+    # filtered_patients =  df_patients[df_patients['PTGENDER'] == sex]
+
+    # Create the design matrix using the filtered DataFrame
+    X_te = create_design_matrix(df_patients[cols_cov],
+                                site_ids=df_patients['set'],
+                                all_sites=site_ids_tr,
+                                basis='bspline',
+                                xmin=xmin,
+                                xmax=xmax)
+
 
     for idp_num, idp in enumerate(idp_ids):
         idp_dir = os.path.join(out_dir, idp)
@@ -581,7 +567,11 @@ def save_plots(sex, output_dir):
         yhat_te = load_2d(os.path.join(idp_dir, 'yhat_' + suffix + '.txt'))
         s2_te = load_2d(os.path.join(idp_dir, 'ys2_' + suffix + '.txt'))
         y_te = load_2d(os.path.join(idp_dir, 'resp_te.txt'))
-        yhat, s2 = predict(cov_file_dummy, alg='blr', respfile=None, model_path=os.path.join(idp_dir, 'Models'), outputsuffix='_dummy')
+        yhat, s2 = predict(cov_file_dummy, 
+                           alg='blr', 
+                           respfile=None, 
+                           model_path=os.path.join(idp_dir, 'Models'), 
+                           outputsuffix='_dummy')
         
         with open(os.path.join(idp_dir, 'Models', 'NM_0_0_estimate.pkl'), 'rb') as handle:
             nm = pickle.load(handle)
@@ -646,11 +636,11 @@ def save_plots(sex, output_dir):
         plt.xlabel('Age')
         plt.ylabel(idp)
         plt.title(idp)
-        plt.xlim((40, 90))
+        plt.xlim((50, 90))
         plt.savefig(os.path.join(output_dir, f'centiles_{idp}.png'), bbox_inches='tight')
         plt.close()
 
-save_plots(0, 'blue', male_dir)  # For males
-save_plots(1, 'red', female_dir)  # For females
+save_plots(0, male_dir)  # For males
+save_plots(1, female_dir)  # For females
 
 os.chdir(out_dir)
