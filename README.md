@@ -33,6 +33,8 @@ git clone git@github.com:ge96lip/IDP_hoelzle.git
     ```
 
 ## Training and Evaluating the Model
+The `model_path` should be a directory where the trained models will be stored. 
+The `data_path` has to have a file called "data_merged.csv" which includes the full dataset. Additionally for running the eval, this folder needs to include the file holding the site names the models where trained on. 
 
 ### To Train a New Model:
 
