@@ -12,7 +12,7 @@ This project contains the codebase used for the comparison of PCN Toolkit BLR vs
 ### 1. Clone the Repository
 
 ```
-git clone "my GitHub address"
+git clone git@github.com:ge96lip/IDP_hoelzle.git
 ```
 
 ### 2. Install the Environment
@@ -23,13 +23,13 @@ git clone "my GitHub address"
 2. Create an environment using the provided environment.yaml:
 
     ```
-    conda env create -f environment.yaml
+    conda env create --file myenv.yml
     ```
 
 3. Activate the environment:
 
     ```
-    conda activate <env_name>
+    conda activate myenv.yml
     ```
 
 4. Install the required conda packages.
