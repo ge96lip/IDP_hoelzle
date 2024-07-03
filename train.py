@@ -87,8 +87,6 @@ for i, s in enumerate(site_ids_te):
     site_to_sitenum[s] = i
     print('site', s, sum(idx), "sitenum: ", i)
 
-print(site_to_sitenum)
-
 
 # Assign sitenum in patients set based on train set mapping
 df_patients['sitenum'] = df_patients['set'].map(site_to_sitenum).fillna(-1).astype(int)
@@ -165,9 +163,6 @@ site_names = y_test['set'].unique()
 # Create a dictionary to hold indices for each site
 sites = {site: y_test.index[y_test['set'] == site].to_list() for site in site_names}
 
-print(site_names)
-
-
 # Create a cubic B-spline basis (used for regression)
 xmin = 30 #16 # xmin & xmax are the boundaries for ages of participants in the dataset
 xmax = 100 #90
@@ -204,8 +199,8 @@ for roi in idp_ids:
 blr_metrics = pd.DataFrame(columns = ['ROI', 'MSLL', 'EV', 'SMSE', 'RMSE', 'Rho'])
 blr_site_metrics = pd.DataFrame(columns = ['ROI', 'set', 'MSLL', 'EV', 'SMSE', 'RMSE', 'Rho'])
 
+print("\n\n\n starting estimation of models: ")
 # estimate models 
-# Loop through ROIs
 for roi in idp_ids:
     print('Running ROI:', roi)
     roi_dir = os.path.join(out_dir, roi)
@@ -246,7 +241,7 @@ for roi in idp_ids:
     # Calculate mean reconstruction error
     mean_reconstruction_error = np.mean(reconstruction_errors)
 
-    print("Mean Reconstruction Error:", mean_reconstruction_error)
+    print(f"Mean Reconstruction Error for {roi}:", mean_reconstruction_error)
     
     for num, site in enumerate(sites):
         yhat_mean_te_site = np.array([[np.mean(yhat_te[sites[site]])]])
@@ -288,6 +283,7 @@ plt.savefig(os.path.join(out_dir, "analysis", "ev_healthy.png"), dpi=380)
 # Close the plot to avoid displaying it
 plt.close()
 
+print("\n\n\n Estimating performance for healthy subjects: ")
 # Estimate Errors on healthy samples: 
 suffix = "testhealthy"
 for idp_num, idp in enumerate(idp_ids): 
@@ -354,7 +350,7 @@ for idp_num, idp in enumerate(idp_ids):
     
     BIC = len(nm.blr.hyp) * np.log(y_tr.shape[0]) + 2 * nm.neg_log_lik
 
-    print("Explained Variance is: ", explained_variance_score(y_te, yhat_te))
+    print(f"Explained Variance for {roi} is: ", explained_variance_score(y_te, yhat_te))
     blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, metrics['EXPV'][0], 
                                          MSLL[0], BIC, skew, kurtosis]
     
@@ -363,12 +359,11 @@ for idp_num, idp in enumerate(idp_ids):
     # Calculate mean reconstruction error
     mean_reconstruction_error = np.mean(reconstruction_errors)
 
-    print("Mean Reconstruction Error:", mean_reconstruction_error)
+    print(f"Mean Reconstruction Error for {roi} is: ", mean_reconstruction_error)
     
-print(blr_metrics)
+print("\n Overall Performance Metric is: ", blr_metrics)
 
 blr_metrics.to_csv(os.path.join(out_dir,'blr_metrics'+suffix+'.csv'))
-
 
 errors = {}
 
@@ -402,22 +397,18 @@ if len(df) != len(average_predictions):
     print("The length of data and average_predictions must be the same.")
 
 average_predictions.index = df.index
-ukb_mask = df['set'] == 'ukb'
-
-residual = df.loc[ukb_mask, idp_ids].values - average_predictions.loc[ukb_mask, idp_ids].values
 
 # Compute residuals for the entire dataset
 residual_all = df[idp_ids].values - average_predictions[idp_ids].values
 
 # Convert residuals to DataFrames for further processing if needed
 
-residual_df = pd.DataFrame(residual, index=df.index[ukb_mask], columns=idp_ids)
-
 residual_all= pd.DataFrame(residual_all, index=df.index, columns=idp_ids)
 
 # Add 'set' and 'DX' columns back to the residual_all_df DataFrame
 
 residual_all = pd.concat([df[['set']], residual_all], axis=1)
+
 # merge the Z-scores to one dataframe 
 z_scores = {}
 # Load the Z-scores for each idp_id
@@ -438,7 +429,6 @@ output_file = os.path.join(out_dir, "analysis",f'Z_score_{suffix}.txt')
 # Save the results to a CSV file
 combined_df.to_csv(output_file, index=False)
 
-print(f'Combined Z-score file saved to {output_file}')
 residual_all["DX"] = 'CN'
 # residual_all = pd.concat([data[['set', 'DX']], pd.DataFrame(residual_all, columns=numerical_cols)], axis=1)
 numerical_cols = idp_ids
@@ -472,9 +462,9 @@ rec_error_grouped = residual_all.groupby(['set', 'DX']).agg(
 # Save reconstruction error statistics to a CSV file
 rec_error_grouped.to_csv(os.path.join(out_dir, f'Total_MAE_{suffix}.csv'), index=False)
 
-print("Reconstruction Error Statistics calculated and saved.")
+print("All Error Statistics calculated and saved.")
 
-print("Starting evaluation on full data:")
+print("\n\n\n Starting evaluation on full data:")
 # Test on all data: 
 suffix = "alldata"
 

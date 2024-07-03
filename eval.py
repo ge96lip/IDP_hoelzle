@@ -246,9 +246,8 @@ site_names = df_test['set'].unique()
 # Create a dictionary to hold indices for each site
 sites = {site: df_test.index[df_test['set'] == site].to_list() for site in site_names}
 
-print(site_names)
-
-
+print("\n\n\n\n\n")
+print("Evaluation on the full dataset")
 suffix = 'alldata'
 # initialise dataframe we will use to store quantitative metrics 
 blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis'])
@@ -437,7 +436,7 @@ res_stats = {
         'kendall': kendall_corr, 
         'r_squared': mean_r_squared
     }
-print(res_stats)
+print("Correlation Parameters: ", res_stats)
 
 
 
@@ -449,12 +448,11 @@ results = residual_all.groupby(['set', 'DX']).agg(
 
 output_file = os.path.join(out_dir, 'analysis', f'Mean_std_testall.txt')
 results.columns = ['_'.join(col).strip() if col[1] else col[0] for col in results.columns.values]
-print(results)
 
 # Save the results to a CSV file
 results.to_csv(output_file, index=False)
 
-print(f'Results saved to {output_file}')
+print(f'Mean and Standard deviations calculated and saved to {output_file}')
 
 numerical_cols = idp_ids
 results_mae = residual_all.groupby(['set', 'DX']).agg(
@@ -474,7 +472,6 @@ dx_index = cols.index('DX')
 cols.insert(dx_index + 1, cols.pop(roi_index))
 results_mae = results_mae[cols]
 results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
-print(results_mae)
 
 # Save results to a CSV file
 results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
@@ -513,8 +510,7 @@ dx_index = cols.index('DX')
 cols.insert(dx_index + 1, cols.pop(roi_index))
 results_count = results_count[cols]
 
-print(results_count)
-
+print("Percentage of subjects with Z_score lower than -2: ", results_count)
 # Save results to a CSV file
 results_count.to_csv(os.path.join(out_dir, f'Perc_{suffix}_l-2.csv'), index=False)
 
