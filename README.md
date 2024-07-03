@@ -32,34 +32,27 @@ git clone git@github.com:ge96lip/IDP_hoelzle.git
     conda activate myenv.yml
     ```
 
-4. Install the required conda packages.
-
-### 3. Install PCN Toolkit and Dependencies
-
-```
-pip install pcntoolkit
-```
-
 ## Training and Evaluating the Model
 
 ### To Train a New Model:
 
 ```
-python run.py train "data_path" "model_path"
+bash script.sh train "model_path" "data_path"
 ```
 
 ### To Evaluate a Trained Model:
 
 ```
-python run.py test "data_path" "model_path" "site_names"
+bash script.sh eval "model_path" "data_path" "file_name_for_sites"
 ```
 
 #### Optional Arguments:
 
 The following are optional arguments for the `run.py` script:
-- `--arg1`: Description of arg1.
-- `--arg2`: Description of arg2.
-- `--arg3`: Description of arg3.
+- `--map_roi`: If the ROI regions from the trained models are named different than in the dataset used, only for eval run, in training the column names are used for naming the models.
+- `--idp_ids`: The ROI regions a model should be trained for, default: ['L_entorhinal','L_inferiortemporal','L_middletemporal','L_inferiorparietal','L_fusiform'].
+- `--cols_cov`: Which covariates should be used for training/testing, default: AGE, GENDER.
+- `--drop_columns`: If the dataset has columns which should not be included, default: True (specific for the dataset used during training). 
 
 ## Running the GAM/GAMLSS Code
 
