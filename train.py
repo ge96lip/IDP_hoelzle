@@ -17,6 +17,10 @@ import argparse
 import ast
 
 import os
+import warnings
+
+# Ignore specific warning categories
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -305,7 +309,7 @@ for idp_num, idp in enumerate(idp_ids):
                                 outputsuffix=suffix)
 
 
-blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis'])
+blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis', 'mean_rec_error'])
 
 for idp_num, idp in enumerate(idp_ids): 
     idp_dir = os.path.join(out_dir, idp)
@@ -349,21 +353,21 @@ for idp_num, idp in enumerate(idp_ids):
     [skew, sdskew, kurtosis, sdkurtosis, semean, sesd] = calibration_descriptives(Z)
     
     BIC = len(nm.blr.hyp) * np.log(y_tr.shape[0]) + 2 * nm.neg_log_lik
-
-    print(f"Explained Variance for {roi} is: ", explained_variance_score(y_te, yhat_te))
-    blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, metrics['EXPV'][0], 
-                                         MSLL[0], BIC, skew, kurtosis]
-    
     reconstruction_errors = np.mean(np.square(y_te - yhat_te), axis=1)
 
     # Calculate mean reconstruction error
     mean_reconstruction_error = np.mean(reconstruction_errors)
 
-    print(f"Mean Reconstruction Error for {roi} is: ", mean_reconstruction_error)
+    EV = explained_variance_score(y_te, yhat_te)
     
-print("\n Overall Performance Metric is: ", blr_metrics)
+    blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, EV, 
+                                         MSLL[0], BIC, skew, kurtosis, mean_reconstruction_error]
+    
+    
+    
+print("\n Overall Performance Metric is: \n", blr_metrics)
 
-blr_metrics.to_csv(os.path.join(out_dir,'blr_metrics'+suffix+'.csv'))
+blr_metrics.to_csv(os.path.join(out_dir, 'analysis', 'blr_metrics_'+suffix+'.csv'))
 
 errors = {}
 
@@ -448,9 +452,8 @@ roi_index = cols.index('ROI')
 dx_index = cols.index('DX')
 cols.insert(dx_index + 1, cols.pop(roi_index))
 results_mae = results_mae[cols]
-results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
 # Save results to a CSV file
-results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
+results_mae.to_csv(os.path.join(out_dir, "analysis", f'MAE_{suffix}.csv'), index=False)
 
 # Calculate reconstruction error and its statistics
 residual_all['err'] = residual_all[numerical_cols].abs().mean(axis=1)
@@ -460,7 +463,7 @@ rec_error_grouped = residual_all.groupby(['set', 'DX']).agg(
 ).reset_index()
 
 # Save reconstruction error statistics to a CSV file
-rec_error_grouped.to_csv(os.path.join(out_dir, f'Total_MAE_{suffix}.csv'), index=False)
+rec_error_grouped.to_csv(os.path.join(out_dir, "analysis", f'Total_MAE_{suffix}.csv'), index=False)
 
 print("All Error Statistics calculated and saved.")
 
@@ -527,7 +530,7 @@ site_names = df_test['set'].unique()
 sites = {site: df_test.index[df_test['set'] == site].to_list() for site in site_names}
 
 # initialise dataframe we will use to store quantitative metrics 
-blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis'])
+blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis', 'mean_rec_error'])
 blr_site_metrics = pd.DataFrame(columns = ['ROI', 'set', 'MSLL', 'EV', 'SMSE', 'RMSE', 'Rho'])
 
 for idp_num, idp in enumerate(idp_ids): 
@@ -574,9 +577,13 @@ for idp_num, idp in enumerate(idp_ids):
     
     BIC = len(nm.blr.hyp) * np.log(y_tr.shape[0]) + 2 * nm.neg_log_lik
     
+    reconstruction_errors = np.mean(np.square(y_te - yhat_te), axis=1)
 
+    # Calculate mean reconstruction error
+    mean_reconstruction_error = np.mean(reconstruction_errors)
+    
     blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, metrics['EXPV'][0], 
-                                         MSLL[0], BIC, skew, kurtosis]
+                                         MSLL[0], BIC, skew, kurtosis, mean_reconstruction_error]
     for num, site in enumerate(sites):
 
         y_mean_te_site = np.array([[np.mean(y_te[sites[site]])]])
@@ -590,7 +597,7 @@ for idp_num, idp in enumerate(idp_ids):
         blr_site_metrics.loc[len(blr_site_metrics)] = [idp, site_names[num], metrics_te_site['MSLL'][0], metrics_te_site['EXPV'][0], metrics_te_site['SMSE'][0], metrics_te_site['RMSE'][0], metrics_te_site['Rho'][0]]
 
 print(blr_metrics)
-blr_metrics.to_csv(os.path.join(out_dir,'blr_metrics'+suffix+'.csv'))
+blr_metrics.to_csv(os.path.join(out_dir, "analysis", 'blr_metrics_'+suffix+'.csv'))
 
 # Plot the EV
 
@@ -699,39 +706,16 @@ dx_ordered = selected_rows['DX'].astype(pd.CategoricalDtype(categories=["CN", "M
 # Calculate Spearman and Kendall correlation
 spearman_corr, _ = spearmanr(dx_ordered, selected_rows['ROI'])
 kendall_corr, _ = kendalltau(dx_ordered, selected_rows['ROI'])
-def calculate_r_squared(subset_data, average_predictions, lh_columns):
-    sst = np.sum((subset_data[lh_columns] - subset_data[lh_columns].mean()) ** 2)
-    sse = np.sum((subset_data[lh_columns] - average_predictions) ** 2)
-    r_squared = 1 - (sse / sst)
-    return r_squared
 
-# Assuming average_predictions is a DataFrame containing the average predictions
-# Initialize a dictionary to store R-squared results for each dataset
-r_squared_results = {}
-
-# Calculate R-squared for each dataset
-for set_name in df_test['set'].unique():
-    subset_data = df_test[df_test['set'] == set_name]
-    avg_preds = average_predictions[df_test['set'] == set_name]
-    r_squared_results[set_name] = calculate_r_squared(subset_data, avg_preds, numerical_cols)
-
-# Convert the dictionary to a DataFrame for easier manipulation
-r_squared_df = pd.DataFrame(r_squared_results)
-
-combined_r_squared = r_squared_df
-
-# Calculate the mean R-squared value for the specified sets
-mean_r_squared = combined_r_squared[['adni', 'aibl', 'jadni', 'delcode']].mean(axis=1).mean()
 
 res_stats = {
         'spearman': spearman_corr,
-        'kendall': kendall_corr, 
-        'r_squared': mean_r_squared
+        'kendall': kendall_corr
     }
 res_stats_df = pd.DataFrame([res_stats])
 
 print("Correlation statistics: ", res_stats)
-output_file = os.path.join(out_dir, "analysis",f'correlation_alldata.txt')
+output_file = os.path.join(out_dir, "analysis",f'correlation_alldata.csv')
 
 # Save the results to a CSV file
 res_stats_df.to_csv(output_file, index=False)
@@ -765,10 +749,9 @@ roi_index = cols.index('ROI')
 dx_index = cols.index('DX')
 cols.insert(dx_index + 1, cols.pop(roi_index))
 results_mae = results_mae[cols]
-results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
 
 # Save results to a CSV file
-results_mae.to_csv(os.path.join(out_dir, f'MAE_{suffix}.csv'), index=False)
+results_mae.to_csv(os.path.join(out_dir, 'analysis', f'MAE_{suffix}.csv'), index=False)
 
 
 # Calculate reconstruction error and its statistics
@@ -779,7 +762,7 @@ rec_error_grouped = residual_all.groupby(['set', 'DX']).agg(
 ).reset_index()
 
 # Save reconstruction error statistics to a CSV file
-rec_error_grouped.to_csv(os.path.join(out_dir, f'Total_MAE_{suffix}.csv'), index=False)
+rec_error_grouped.to_csv(os.path.join(out_dir, 'analysis',f'Total_MAE_{suffix}.csv'), index=False)
 
 results_count = z_scores.groupby(['set', 'DX']).agg(
     {col: lambda x: (x < -2).sum() / len(x) * 100 for col in numerical_cols}
@@ -805,7 +788,7 @@ cols.insert(dx_index + 1, cols.pop(roi_index))
 results_count = results_count[cols]
 
 # Save results to a CSV file
-results_count.to_csv(os.path.join(out_dir, f'Perc_{suffix}_l-2.csv'), index=False)
+results_count.to_csv(os.path.join(out_dir, 'analysis',f'Perc_{suffix}_l-2.csv'), index=False)
 
 
 # Define the directory structure

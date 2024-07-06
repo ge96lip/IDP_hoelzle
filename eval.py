@@ -158,7 +158,7 @@ xmax = 110
 force_refit = True 
 
 # Absolute Z treshold above which a sample is considered to be an outlier (without fitting any model)
-outlier_thresh = 7 
+outlier_thresh = 3
 
 if not all(elem in site_ids_tr for elem in site_ids_te):
     print('Warning: some of the testing sites are not in the training data')
@@ -250,7 +250,7 @@ print("\n\n\n\n\n")
 print("Evaluation on the full dataset")
 suffix = 'alldata'
 # initialise dataframe we will use to store quantitative metrics 
-blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis'])
+blr_metrics = pd.DataFrame(columns = ['eid', 'NLL', 'EV', 'MSLL', 'BIC', 'Skew', 'Kurtosis', 'mean_rec_error'])
 blr_site_metrics = pd.DataFrame(columns = ['ROI', 'set', 'MSLL', 'EV', 'SMSE', 'RMSE', 'Rho'])
 
 for idp_num, idp in enumerate(idp_ids): 
@@ -290,16 +290,21 @@ for idp_num, idp in enumerate(idp_ids):
         y_tr_w = W.f(y_tr, warp_param)
         y_tr_mean = np.array( [[np.mean(y_tr_w)]] )
         y_tr_var = np.array( [[np.var(y_tr_w)]] )
-        MSLL = compute_MSLL(y_te_w, yhat_te, s2_te, y_tr_mean, y_tr_var)     
+        MSLL = compute_MSLL(y_te_w, yhat_te, s2_te, y_tr_mean, y_tr_var) 
+           
+        reconstruction_errors = np.mean(np.square(y_te - med_te), axis=1)
+
+        # Calculate mean reconstruction error
+        mean_reconstruction_error = np.mean(reconstruction_errors)
+        print(f"Mean Reconstruction Error for {idp} is: ", mean_reconstruction_error) 
     
     Z = np.loadtxt(os.path.join(idp_dir, 'Z_' + suffix + '.txt'))
     [skew, sdskew, kurtosis, sdkurtosis, semean, sesd] = calibration_descriptives(Z)
     
     BIC = len(nm.blr.hyp) * np.log(y_tr.shape[0]) + 2 * nm.neg_log_lik
     
-
     blr_metrics.loc[len(blr_metrics)] = [idp, nm.neg_log_lik, metrics['EXPV'][0], 
-                                         MSLL[0], BIC, skew, kurtosis]
+                                         MSLL[0], BIC, skew, kurtosis, mean_reconstruction_error]
     for num, site in enumerate(sites):
 
         y_mean_te_site = np.array([[np.mean(y_te[sites[site]])]])
@@ -406,38 +411,15 @@ dx_ordered = selected_rows['DX'].astype(pd.CategoricalDtype(categories=["CN", "M
 # Calculate Spearman and Kendall correlation
 spearman_corr, _ = spearmanr(dx_ordered, selected_rows['ROI'])
 kendall_corr, _ = kendalltau(dx_ordered, selected_rows['ROI'])
-def calculate_r_squared(subset_data, average_predictions, lh_columns):
-    sst = np.sum((subset_data[lh_columns] - subset_data[lh_columns].mean()) ** 2)
-    sse = np.sum((subset_data[lh_columns] - average_predictions) ** 2)
-    r_squared = 1 - (sse / sst)
-    return r_squared
-
-# Assuming average_predictions is a DataFrame containing the average predictions
-# Initialize a dictionary to store R-squared results for each dataset
-r_squared_results = {}
-
-# Calculate R-squared for each dataset
-for set_name in df_test['set'].unique():
-    subset_data = df_test[df_test['set'] == set_name]
-    avg_preds = average_predictions[df_test['set'] == set_name]
-    r_squared_results[set_name] = calculate_r_squared(subset_data, avg_preds, numerical_cols)
-
-# Convert the dictionary to a DataFrame for easier manipulation
-r_squared_df = pd.DataFrame(r_squared_results)
-
-combined_r_squared = r_squared_df
-
-# Calculate the mean R-squared value for the specified sets
-mean_r_squared = combined_r_squared[['adni', 'aibl', 'jadni', 'delcode']].mean(axis=1).mean()
-print(mean_r_squared)
 
 res_stats = {
         'spearman': spearman_corr,
-        'kendall': kendall_corr, 
-        'r_squared': mean_r_squared
+        'kendall': kendall_corr
     }
-print("Correlation Parameters: ", res_stats)
+res_stats_df = pd.DataFrame([res_stats])
 
+print("Correlation statistics: ", res_stats)
+output_file = os.path.join(out_dir, "analysis",f'correlation_alldata.csv')
 
 
 # Calculate means and standard deviations for numerical columns grouped by 'set' and 'DX'
@@ -546,18 +528,20 @@ def save_plots(sex, output_dir):
     np.savetxt(cov_file_dummy, X_dummy)
     sns.set(style='whitegrid')
     
-    # filtered_patients =  df_patients[df_patients['PTGENDER'] == sex]
-
-    # Create the design matrix using the filtered DataFrame
-    X_te = create_design_matrix(df_patients[cols_cov],
-                                site_ids=df_patients['set'],
+    # Randomly sample 50% of df_patients
+    df_patients_sampled = df_patients.sample(frac=0.5, random_state=42)
+    
+    # Create the design matrix using the sampled DataFrame
+    X_te = create_design_matrix(df_patients_sampled[cols_cov],
+                                site_ids=df_patients_sampled['set'],
                                 all_sites=site_ids_tr,
                                 basis='bspline',
                                 xmin=xmin,
                                 xmax=xmax)
-
+    plt.figure(figsize=(15, 6))
 
     for idp_num, idp in enumerate(idp_ids):
+        plt.subplot(2, 3, idp_num + 1)
         idp_dir = os.path.join(out_dir, idp)
         os.chdir(idp_dir)
         yhat_te = load_2d(os.path.join(idp_dir, 'yhat_' + suffix + '.txt'))
@@ -590,7 +574,7 @@ def save_plots(sex, output_dir):
                 idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
                 y_te_rescaled = df_test[idp][idx]
             else:
-                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients['set'] == site).to_numpy()))[0]
+                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients_sampled['set'] == site).to_numpy()))[0]
                 y_ad = load_2d(os.path.join(idp_dir, 'resp_ad.txt'))
                 X_ad = load_2d(os.path.join(idp_dir, 'cov_bspline_ad.txt'))
                 idx_a = np.where(np.bitwise_and(X_ad[:, 2] == sex, (df_ad['set'] == site).to_numpy()))[0]
@@ -629,12 +613,20 @@ def save_plots(sex, output_dir):
         plt.plot(xx, pr_int95_scaled[:, 0], color=clr, linewidth=0.5)
         plt.plot(xx, pr_int95_scaled[:, 1], color=clr, linewidth=0.5)
 
-        plt.xlabel('Age')
+        """plt.xlabel('Age')
         plt.ylabel(idp)
         plt.title(idp)
         plt.xlim((50, 90))
         plt.savefig(os.path.join(output_dir, f'centiles_{idp}.png'), bbox_inches='tight')
-        plt.close()
+        plt.close()"""
+        plt.xlabel('Age')
+        plt.ylabel('Thickness')
+        plt.title(idp.replace('_', ' ').title())
+        plt.xlim((50, 90))
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'combined_plots_sex_{sex}.png'), bbox_inches='tight')
+    plt.close()
 
 save_plots(0, male_dir)  # For males
 save_plots(1, female_dir)  # For females
