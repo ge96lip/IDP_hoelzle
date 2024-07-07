@@ -63,7 +63,7 @@ data = data[data['DX'].isin(valid_dx)]
 data.loc[:, 'PTGENDER'] = data['PTGENDER'].map({'Male': 0, 'Female': 1})
 
 df_train = data[data['DX'].isin(['CN'])]
-df_patients = data[data['DX'].isin(['CN'])]
+df_patients = data[data['DX'].isin(['AD'])]
 
 # test with full data 
 df_test = data
@@ -800,6 +800,8 @@ female_dir = os.path.join(norm_curves_dir, 'female')
 os.makedirs(male_dir, exist_ok=True)
 os.makedirs(female_dir, exist_ok=True)
 
+"""
+
 def save_plots(sex, output_dir):
     xmin = 30
     xmax = 100
@@ -863,7 +865,7 @@ def save_plots(sex, output_dir):
                 idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
                 y_te_rescaled = y_te_rescaled + np.median(y_te[idx]) - np.median(med[idx_dummy])
 
-            plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
+            #plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
 
         scale_factor = np.median(y_te) / np.median(med)
         med_scaled = med * scale_factor
@@ -896,8 +898,129 @@ def save_plots(sex, output_dir):
         plt.ylabel(idp)
         plt.title(idp)
         plt.xlim((50, 90))
+        plt.savefig(os.path.join(output_dir, f'centiles_{idp}_noPATIONS.png'), bbox_inches='tight')
+        plt.close()"""
+
+def save_plots(sex, output_dir):
+    xmin = 30
+    xmax = 100
+    if sex == 1:
+        clr = 'red'
+    else:
+        clr = 'blue'
+
+    # Create dummy data for visualization
+    xx = np.arange(xmin, xmax, 0.5)
+    X0_dummy = np.zeros((len(xx), 2))
+    X0_dummy[:, 0] = xx
+    X0_dummy[:, 1] = sex
+    X_dummy = create_design_matrix(X0_dummy, 
+                                   xmin=xmin, 
+                                   xmax=xmax, 
+                                   site_ids=None, 
+                                   all_sites=None)
+    cov_file_dummy = os.path.join(out_dir, 'cov_bspline_dummy_mean.txt')
+    np.savetxt(cov_file_dummy, X_dummy)
+    sns.set(style='whitegrid')
+    
+    # Create the design matrix using the sampled DataFrame
+    X_te = create_design_matrix(df_patients[cols_cov],
+                                site_ids=df_patients['set'],
+                                all_sites=site_ids_tr,
+                                basis='bspline',
+                                xmin=xmin,
+                                xmax=xmax)
+    
+    print(X_te.shape)
+    plt.figure(figsize=(15, 6))
+
+    for idp_num, idp in enumerate(idp_ids):
+        plt.subplot(2, 3, idp_num + 1)
+        idp_dir = os.path.join(out_dir, idp)
+        os.chdir(idp_dir)
+        yhat_te = load_2d(os.path.join(idp_dir, 'yhat_' + suffix + '.txt'))
+        s2_te = load_2d(os.path.join(idp_dir, 'ys2_' + suffix + '.txt'))
+        y_te = load_2d(os.path.join(idp_dir, 'resp_te.txt'))
+        yhat, s2 = predict(cov_file_dummy, 
+                           alg='blr', 
+                           respfile=None, 
+                           model_path=os.path.join(idp_dir, 'Models'), 
+                           outputsuffix='_dummy')
+        print("mean yhat is: ", np.mean(yhat))
+        with open(os.path.join(idp_dir, 'Models', 'NM_0_0_estimate.pkl'), 'rb') as handle:
+            nm = pickle.load(handle)
+        
+        W = nm.blr.warp
+        warp_param = nm.blr.hyp[1:nm.blr.warp.get_n_params() + 1]
+        med_te = W.warp_predictions(np.squeeze(yhat_te), np.squeeze(s2_te), warp_param)[0]
+        med_te = med_te[:, np.newaxis]
+        evaluate(y_te, med_te)
+        med, pr_int = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param)
+        beta, _, _ = nm.blr._parse_hyps(nm.blr.hyp, X_dummy)
+        s2n = 1 / beta
+        s2s = s2 - s2n
+        y_te_rescaled_all = np.zeros_like(y_te)
+        for sid, site in enumerate(site_ids_te):
+            if all(elem in site_ids_tr for elem in site_ids_te):
+                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, X_te[:, sid + len(cols_cov) + 1] != 0))[0]
+                if len(idx) == 0:
+                    continue
+                idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
+                y_te_rescaled = df_test[idp][idx] # + np.median(y_te[idx]) - np.median(med[idx_dummy])
+            else:
+                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients['set'] == site).to_numpy()))[0]
+                y_ad = load_2d(os.path.join(idp_dir, 'resp_ad.txt'))
+                X_ad = load_2d(os.path.join(idp_dir, 'cov_bspline_ad.txt'))
+                idx_a = np.where(np.bitwise_and(X_ad[:, 2] == sex, (df_ad['set'] == site).to_numpy()))[0]
+                if len(idx) < 2 or len(idx_a) < 2:
+                    continue
+                y_te_rescaled, s2_rescaled = nm.blr.predict_and_adjust(nm.blr.hyp, X_ad[idx_a, :], np.squeeze(y_ad[idx_a]), Xs=None, ys=np.squeeze(y_te[idx]))
+                idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
+                y_te_rescaled = y_te_rescaled # + np.median(y_te[idx]) - np.median(med[idx_dummy])
+
+            plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
+
+        scale_factor = np.median(y_te) / np.median(med)
+        med_scaled = med * scale_factor
+        pr_int_scaled = [pi * scale_factor for pi in pr_int]
+        plt.plot(xx, med_scaled, clr)
+        junk, pr_int25 = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param, percentiles=[0.25, 0.75])
+        junk, pr_int95 = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param, percentiles=[0.05, 0.95])
+        pr_int25_scaled = np.array([pi * scale_factor for pi in pr_int25])
+        pr_int95_scaled = np.array([pi * scale_factor for pi in pr_int95])
+        plt.fill_between(xx, pr_int25_scaled[:, 0], pr_int25_scaled[:, 1], alpha=0.1, color=clr)
+        plt.fill_between(xx, pr_int95_scaled[:, 0], pr_int95_scaled[:, 1], alpha=0.1, color=clr)
+        junk, pr_int25l = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 - 0.5 * s2s), warp_param, percentiles=[0.25, 0.75])
+        junk, pr_int95l = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 - 0.5 * s2s), warp_param, percentiles=[0.05, 0.95])
+        pr_int25l_scaled = np.array([pi * scale_factor for pi in pr_int25l])
+        pr_int95l_scaled = np.array([pi * scale_factor for pi in pr_int95l])
+        junk, pr_int25u = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 + 0.5 * s2s), warp_param, percentiles=[0.25, 0.75])
+        junk, pr_int95u = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 + 0.5 * s2s), warp_param, percentiles=[0.05, 0.95])
+        pr_int25u_scaled = np.array([pi * scale_factor for pi in pr_int25u])
+        pr_int95u_scaled = np.array([pi * scale_factor for pi in pr_int95u])
+        plt.fill_between(xx, pr_int25l_scaled[:, 0], pr_int25u_scaled[:, 0], alpha=0.3, color=clr)
+        plt.fill_between(xx, pr_int95l_scaled[:, 0], pr_int95u_scaled[:, 0], alpha=0.3, color=clr)
+        plt.fill_between(xx, pr_int25l_scaled[:, 1], pr_int25u_scaled[:, 1], alpha=0.3, color=clr)
+        plt.fill_between(xx, pr_int95l_scaled[:, 1], pr_int95u_scaled[:, 1], alpha=0.3, color=clr)
+        plt.plot(xx, pr_int25_scaled[:, 0], color=clr, linewidth=0.5)
+        plt.plot(xx, pr_int25_scaled[:, 1], color=clr, linewidth=0.5)
+        plt.plot(xx, pr_int95_scaled[:, 0], color=clr, linewidth=0.5)
+        plt.plot(xx, pr_int95_scaled[:, 1], color=clr, linewidth=0.5)
+
+        """plt.xlabel('Age')
+        plt.ylabel(idp)
+        plt.title(idp)
+        plt.xlim((50, 90))
         plt.savefig(os.path.join(output_dir, f'centiles_{idp}.png'), bbox_inches='tight')
-        plt.close()
+        plt.close()"""
+        plt.xlabel('Age')
+        plt.ylabel('Thickness')
+        plt.title(idp.replace('_', ' ').title())
+        plt.xlim((50, 90))
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'combined_plots_sex_{sex}_noPatients.png'), bbox_inches='tight')
+    plt.close()
 
 save_plots(0, male_dir)  # For males
 save_plots(1, female_dir)  # For females

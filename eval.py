@@ -47,7 +47,6 @@ def load_z_scoes(idp_ids, out_dir, data):
     # Ensure the Z-scores DataFrame has the same index as data
     z_scores_df.index = data.index
 
-    print(z_scores_df)
     # Combine the set and DX columns with the Z-scores
     combined_df = pd.concat([data[['set', 'DX']], z_scores_df], axis=1)
 
@@ -59,7 +58,6 @@ def load_z_scoes(idp_ids, out_dir, data):
     return combined_df 
 
 args = get_args()
-print(args.map_roi)
 # The rest of your code where you use map_roi
 data_dir = args.data_dir
 out_dir = args.out_dir 
@@ -80,7 +78,7 @@ data = data[data['DX'].isin(valid_dx)]
 data.loc[:, 'PTGENDER'] = data['PTGENDER'].map({'Male': 0, 'Female': 1})
 
 df_ad = data[data['DX'].isin(['CN'])]
-df_patients = data[data['DX'].isin(['CN'])]
+df_patients = data[data['DX'].isin(['AD'])]
 
 # test with full data 
 df_test = data
@@ -91,8 +89,7 @@ df_ad.reset_index(drop=True, inplace=True)
 
 # load the sites used for training
 site_names = args.site_names_file
-print(args.site_names_file)
-print(data_dir)
+
 with open(os.path.join(data_dir, site_names)) as f:
     site_ids_tr = f.read().splitlines()
 
@@ -113,8 +110,6 @@ for i, s in enumerate(site_ids_te):
     df_test.loc[idx, 'sitenum'] = i
     site_to_sitenum[s] = i
     print('site', s, sum(idx), "sitenum: ", i)
-
-print(site_to_sitenum)
 
 
 # Assign sitenum in patients set based on train set mapping
@@ -229,7 +224,6 @@ for idp_num, idp in enumerate(idp_ids):
         sitenum_file_te = os.path.join(idp_dir, 'sitenum_te.txt')
         site_num_te = df_test['sitenum'].to_numpy(dtype=int)
         np.savetxt(sitenum_file_te, site_num_te)
-        print(cov_file_ad)
         yhat_te, s2_te, Z = predict(cov_file_te,
                                     alg = 'blr',
                                     respfile = resp_file_te,
@@ -317,8 +311,6 @@ for idp_num, idp in enumerate(idp_ids):
         site_name = num #site_names[num]
         blr_site_metrics.loc[len(blr_site_metrics)] = [idp, site_names[num], metrics_te_site['MSLL'][0], metrics_te_site['EXPV'][0], metrics_te_site['SMSE'][0], metrics_te_site['RMSE'][0], metrics_te_site['Rho'][0]]
 
-print(blr_metrics) #.sort_values(['Kurtosis'], ascending=False))
-
 blr_metrics.to_csv(os.path.join(out_dir,'blr_metrics'+suffix+'.csv'))
 
 # Plot the EV
@@ -379,7 +371,6 @@ if len(df_test) != len(average_predictions):
 
 average_predictions.index = df_test.index
 
-print(average_predictions)
 
 # Compute residuals for the entire dataset
 residual_all = df_test[idp_ids].values - average_predictions[idp_ids].values
@@ -400,7 +391,6 @@ selected_rows = z_scores[z_scores['set'].isin(['adni', 'aibl', 'jadni', 'delcode
 
 # Select the matched column names that are present in selected_rows
 matched_column_names_selected = [col for col in idp_ids if col in selected_rows.columns]
-print(matched_column_names_selected)
 
 # Calculate the mean of the matched columns, ignoring NaN values
 selected_rows['ROI'] = selected_rows[matched_column_names_selected].mean(axis=1, skipna=True)
@@ -528,12 +518,9 @@ def save_plots(sex, output_dir):
     np.savetxt(cov_file_dummy, X_dummy)
     sns.set(style='whitegrid')
     
-    # Randomly sample 50% of df_patients
-    df_patients_sampled = df_patients.sample(frac=0.5, random_state=42)
-    
     # Create the design matrix using the sampled DataFrame
-    X_te = create_design_matrix(df_patients_sampled[cols_cov],
-                                site_ids=df_patients_sampled['set'],
+    X_te = create_design_matrix(df_patients[cols_cov],
+                                site_ids=df_patients['set'],
                                 all_sites=site_ids_tr,
                                 basis='bspline',
                                 xmin=xmin,
@@ -552,7 +539,7 @@ def save_plots(sex, output_dir):
                            respfile=None, 
                            model_path=os.path.join(idp_dir, 'Models'), 
                            outputsuffix='_dummy')
-        
+        print("mean yhat is: ", np.mean(yhat))
         with open(os.path.join(idp_dir, 'Models', 'NM_0_0_estimate.pkl'), 'rb') as handle:
             nm = pickle.load(handle)
         
@@ -574,7 +561,7 @@ def save_plots(sex, output_dir):
                 idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
                 y_te_rescaled = df_test[idp][idx]
             else:
-                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients_sampled['set'] == site).to_numpy()))[0]
+                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients['set'] == site).to_numpy()))[0]
                 y_ad = load_2d(os.path.join(idp_dir, 'resp_ad.txt'))
                 X_ad = load_2d(os.path.join(idp_dir, 'cov_bspline_ad.txt'))
                 idx_a = np.where(np.bitwise_and(X_ad[:, 2] == sex, (df_ad['set'] == site).to_numpy()))[0]
@@ -583,9 +570,11 @@ def save_plots(sex, output_dir):
                 y_te_rescaled, s2_rescaled = nm.blr.predict_and_adjust(nm.blr.hyp, X_ad[idx_a, :], np.squeeze(y_ad[idx_a]), Xs=None, ys=np.squeeze(y_te[idx]))
                 idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
                 y_te_rescaled = y_te_rescaled + np.median(y_te[idx]) - np.median(med[idx_dummy])
-
-            plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
-
+            
+            # uncomment for plotting AD patients into the growth curves
+            #plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
+        
+        # rescale the y-axis to match the actual values 
         scale_factor = np.median(y_te) / np.median(med)
         med_scaled = med * scale_factor
         pr_int_scaled = [pi * scale_factor for pi in pr_int]
@@ -625,7 +614,7 @@ def save_plots(sex, output_dir):
         plt.xlim((50, 90))
     
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'combined_plots_sex_{sex}.png'), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, f'combined_plots_sex_{sex}_noPatients.png'), bbox_inches='tight')
     plt.close()
 
 save_plots(0, male_dir)  # For males
