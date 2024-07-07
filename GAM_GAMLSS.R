@@ -9,18 +9,18 @@ library(mgcv)
 library(Metrics)
 library(ggplot2)
 
-model_gam <-  "GAM" # "GAM" # "GAMLSS"    # GAMLSS returns negative sigma
-model_gamlss <- "GAMLSS"
-merged <- read.csv(file="full_data_file")
+model_gam <-  "GAM"
+model_gamlss <- "GAMLSS" # GAMLSS returns negative sigma
+merged <- read.csv(file="path/to/combined_data_file.csv")
 #lh_columns <- names(data)[grepl("^(lh|rh)_.*thickness$", names(data))]
-data_patients <- read.csv(file="data_file_only_AD_subjects")
-data_train <- read.csv(file="data_file_train_split")
-data_test <- read.csv(file="data_file_test_split")
+data_patients <- read.csv(file="all_AD_MCI_subjects.csv")
+data_train <- read.csv(file="path/to/CN_train_split.csv")
+data_test <- read.csv(file="path/to/CN_test_split.csv")
 
-# ROIs associated with AD 
 AD_ROI = c('lh_entorhinal_thickness','lh_inferiortemporal_thickness','lh_middletemporal_thickness','lh_inferiorparietal_thickness','lh_fusiform_thickness') #,'lh_precuneus_thickness')
 
-resultsDir <- 'where_should_the_results_be_saved'
+
+resultsDir <- '~/Desktop/SS2024/IDP/resultTables/test'
 
 # data preparation
 data <- merged
@@ -45,6 +45,7 @@ gamlss_models <- setNames(lapply(AD_ROI, function(col) {
 }), AD_ROI)
 
 
+
 # Calculate residuals and Z-scores
 calculate_residuals_and_zscores <- function(models, data_test, data, AD_ROI, model_type) {
   errors <- list()
@@ -62,16 +63,18 @@ calculate_residuals_and_zscores <- function(models, data_test, data, AD_ROI, mod
     gamlss_var <- list()
     for (col in names(models)) {
       gamlss_var[[col]] <- predict(models[[col]], what = 'sigma', newdata = data)
+      print(mean(gamlss_var[[col]]))
     }
     var <- do.call(cbind, gamlss_var)
     z_scores <- residual_all / abs(var)
   } else {
     var <- apply(residual, 2, sd, na.rm = TRUE)
+    print((var))
     z_scores <- sweep(residual_all, 2, var, FUN = '/')
   }
   z_scores <- cbind(data[, 3:4], z_scores)
   residual_all <- cbind(data[, 3:4], residual_all)
-  return(list(z_scores = z_scores, residual_all = residual_all, var = var))
+  return(list(z_scores = z_scores, residual_all = residual_all, var = var, avg_pred=average_predictions))
 }
 
 
@@ -256,9 +259,9 @@ compute_correlation_and_r_squared <- function(z_scores, AD_ROI, sd_pop, data, av
 }
 
 # Function to generate plots
-generate_plots_gam <- function(models, average_predictions, AD_ROI, data_healthy, resultsDir, suffix, data_patients) {
+generate_plots_gam <- function(models, average_predictions, AD_ROI, data_healthy, resultsDir, suffix, data_patients, sd_pop) {
 
-  remove_outliers <- function(values, threshold = 3) {
+  remove_outliers <- function(values, threshold = 7) {
     z_scores <- (values - mean(values, na.rm = TRUE)) / sd(values, na.rm = TRUE)
     return(abs(z_scores) < threshold & values > 0)
   }
@@ -269,7 +272,6 @@ generate_plots_gam <- function(models, average_predictions, AD_ROI, data_healthy
     pred <- predict(model, newdata = data_healthy, se.fit = TRUE)
     predicted_values <- pred$fit
     predicted_sds <- pred$se.fit
-    print(predicted_sds)
     true_values <- data_patients[[roi]]
     non_outliers <- remove_outliers(true_values, outlier_thresh)
     filtered_data <- data_patients[non_outliers, ]
@@ -311,11 +313,21 @@ generate_plots_gam <- function(models, average_predictions, AD_ROI, data_healthy
          y = "Thickness") +
     facet_wrap(~ ROI, scales = "free_y") +
     theme_minimal()
+  
+  ggplot(combined_plot_data, aes(x = AGE)) +
+    geom_line(aes(y = Prediction, color = ROI)) +
+    geom_ribbon(aes(ymin = Lower_05, ymax = Upper_05, fill = ROI), alpha = 0.1, color = NA) +
+    geom_ribbon(aes(ymin = Lower_25, ymax = Upper_25, fill = ROI), alpha = 0.1, color = NA) +
+    labs(title = "Predictions with Age-Dependent Standard Deviations and Confidence Intervals",
+         x = "Age",
+         y = "Thickness") +
+    facet_wrap(~ ROI, scales = "free_y") +
+    theme_minimal()
 }
 # Function to generate plots
 generate_plots_gamlss <- function(models, average_predictions, AD_ROI, data_healthy, resultsDir, suffix, data_patients) {
   
-  remove_outliers <- function(values, threshold = 3) {
+  remove_outliers <- function(values, threshold = 7) {
     z_scores <- (values - mean(values, na.rm = TRUE)) / sd(values, na.rm = TRUE)
     return(abs(z_scores) < threshold & values > 0)
   }
@@ -369,7 +381,17 @@ generate_plots_gamlss <- function(models, average_predictions, AD_ROI, data_heal
     geom_ribbon(aes(ymin = Lower_05, ymax = Upper_05, fill = ROI), alpha = 0.1, color = NA) +
     geom_ribbon(aes(ymin = Lower_25, ymax = Upper_25, fill = ROI), alpha = 0.1, color = NA) +
     geom_point(aes(y = TrueValue, color = ROI), size = 1.5, shape = 21) +
-    labs(title = "Predictions with Age-Dependent Standard Deviations and Confidence Intervals",
+    labs(title = "Predictions with Model Variance and Confidence Intervals",
+         x = "Age",
+         y = "Thickness") +
+    facet_wrap(~ ROI, scales = "free_y") +
+    theme_minimal()
+  
+  ggplot(combined_plot_data, aes(x = AGE)) +
+    geom_line(aes(y = Prediction, color = ROI)) +
+    geom_ribbon(aes(ymin = Lower_05, ymax = Upper_05, fill = ROI), alpha = 0.1, color = NA) +
+    geom_ribbon(aes(ymin = Lower_25, ymax = Upper_25, fill = ROI), alpha = 0.1, color = NA) +
+    labs(title = "Predictions with Model Variance and Confidence Intervals",
          x = "Age",
          y = "Thickness") +
     facet_wrap(~ ROI, scales = "free_y") +
@@ -386,11 +408,13 @@ compute_statistics(models = gam_models, data_te = mydata, suffix = "GAM", experi
 z_scores <- residuals_and_zscores$z_scores
 residual_all <- residuals_and_zscores$residual_all
 numerical_cols <- names(z_scores)[-(1:2)]
+sd_pop <- residuals_and_zscores$var
+average_predictions <- residuals_and_zscores$avg_pred
 matched_column_names <- summarize_and_save_results(z_scores, residual_all, AD_ROI, numerical_cols, resultsDir, "GAM")
 
-compute_correlation_and_r_squared(errors_mat, AD_ROI, residuals_and_zscores$var, data, average_predictions, resultsDir, "GAM", matched_column_names)
-outlier_thresh <- 2
-generate_plots_gam(gam_models, data_healthy = data_train, average_predictions, AD_ROI=AD_ROI, resultsDir=resultsDir, suffix="GAM", data_patients = data_patients)
+compute_correlation_and_r_squared(z_scores, AD_ROI, sd_pop, data, average_predictions, resultsDir, "GAM", matched_column_names)
+outlier_thresh <- 7
+generate_plots_gam(gam_models, data_healthy = data_train, average_predictions, AD_ROI=AD_ROI, resultsDir=resultsDir, suffix="GAM", data_patients = data_patients, sd_pop=sd_pop)
 
 # GAMLSS
 
@@ -400,6 +424,7 @@ compute_statistics(models = gamlss_models, data_te = mydata, suffix = "GAMLSS", 
 z_scores <- residuals_and_zscores$z_scores
 residual_all <- residuals_and_zscores$residual_all
 numerical_cols <- names(z_scores)[-(1:2)]
+average_predictions <- residuals_and_zscores$avg_pred
 matched_column_names <- summarize_and_save_results(z_scores, residual_all, AD_ROI, numerical_cols, resultsDir, "GAMLSS")
 
 compute_correlation_and_r_squared(z_scores, AD_ROI, residuals_and_zscores$sd_pop, data, average_predictions, resultsDir, "GAMLSS", matched_column_names)
