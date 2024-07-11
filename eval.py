@@ -16,22 +16,35 @@ import argparse
 import ast
 import os 
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out_dir', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--site_names_file', type=str, default='site_ids_ct_dk_59sites.txt')
     parser.add_argument('--map_roi', type=str, default="{'lh_entorhinal_thickness': 'L_entorhinal', 'lh_inferiortemporal_thickness': 'L_inferiortemporal', 'lh_middletemporal_thickness': 'L_middletemporal', 'lh_inferiorparietal_thickness': 'L_inferiorparietal', 'lh_fusiform_thickness': 'L_fusiform'}")
-    parser.add_argument('--idp_ids', type=str, default="['L_entorhinal','L_inferiortemporal','L_middletemporal','L_inferiorparietal','L_fusiform']")
-    parser.add_argument('--drop_columns', type=bool, default=True)
+    parser.add_argument('--idp_ids', type=str, default='["L_entorhinal","L_inferiortemporal","L_middletemporal","L_inferiorparietal","L_fusiform"]') #["lh_entorhinal_thickness","lh_inferiortemporal_thickness","lh_middletemporal_thickness","lh_inferiorparietal_thickness","lh_fusiform_thickness"] ["L_entorhinal","L_inferiortemporal","L_middletemporal","L_inferiorparietal","L_fusiform"]
+    parser.add_argument('--drop_columns', type=str2bool, default=True)
     parser.add_argument('--cols_cov', type=str, default="['AGE','PTGENDER']")
-    
+    parser.add_argument('--map_true', type=str2bool, default=True)
+
     args = parser.parse_args()
-    # Convert the map_roi string to a dictionary
+    
+    # Convert the string representations to actual Python objects
     args.map_roi = ast.literal_eval(args.map_roi)
     args.idp_ids = ast.literal_eval(args.idp_ids)
     args.cols_cov = ast.literal_eval(args.cols_cov)
-    
+
     return args
 
 def load_z_scoes(idp_ids, out_dir, data): 
@@ -58,8 +71,8 @@ def load_z_scoes(idp_ids, out_dir, data):
     return combined_df 
 
 args = get_args()
-# The rest of your code where you use map_roi
 data_dir = args.data_dir
+
 out_dir = args.out_dir 
 # make analysis folder 
 os.makedirs(os.path.join(out_dir, "analysis"), exist_ok=True)
@@ -69,7 +82,7 @@ data = pd.read_csv(os.path.join(data_dir, "data_merged.csv"))
 # specific to chair's dataset: 
 if args.drop_columns: 
     columns_to_drop = data.columns[2:6]
-    df_ad = data.drop(columns_to_drop, axis=1)
+    data = data.drop(columns_to_drop, axis=1)
 
 valid_dx = ['AD', 'MCI', 'CN']
 data = data[data['DX'].isin(valid_dx)]
@@ -128,10 +141,10 @@ for s in site_ids_patients:
     print('site', s, sum(idx), "sitenum: ", df_patients.loc[idx, 'sitenum'].iloc[0])
 
 map_roi = args.map_roi
-
-df_patients.rename(columns=map_roi, inplace=True)
-df_ad.rename(columns=map_roi, inplace=True)
-df_test.rename(columns=map_roi, inplace=True)
+if args.map_true:
+    df_patients.rename(columns=map_roi, inplace=True)
+    df_ad.rename(columns=map_roi, inplace=True)
+    df_test.rename(columns=map_roi, inplace=True)
 
 sns.set(font_scale=1.5, style='darkgrid')
 
@@ -170,7 +183,7 @@ for idp_num, idp in enumerate(idp_ids):
     os.chdir(idp_dir)
     
     # extract and save the response variables for the test set
-    y_te = df_test[idp].to_numpy() # originaly: df_test
+    y_te = df_test[idp].to_numpy() 
     
     # save the variables
     resp_file_te = os.path.join(idp_dir, 'resp_te.txt') 
@@ -199,7 +212,6 @@ for idp_num, idp in enumerate(idp_ids):
                                     outputsuffix='alldata')
     else:
         print('Some sites missing from the training data. Adapting model')
-
         # save the covariates for the adaptation data
         X_ad = create_design_matrix(df_ad[cols_cov],
                                     site_ids = df_ad['set'],
@@ -207,6 +219,7 @@ for idp_num, idp in enumerate(idp_ids):
                                     basis = 'bspline',
                                     xmin = xmin,
                                     xmax = xmax)
+        
         cov_file_ad = os.path.join(idp_dir, 'cov_bspline_ad.txt')
         np.savetxt(cov_file_ad, X_ad)
 
@@ -355,6 +368,7 @@ for col in idp_ids:
     s2_te = load_2d(os.path.join(idp_dir, 'ys2_' + suffix + '.txt'))
     warp_param = nm.blr.hyp[1:nm.blr.warp.get_n_params()+1] 
     W = nm.blr.warp
+    
     
     # warp predictions
     med_te = W.warp_predictions(np.squeeze(yhat_te), np.squeeze(s2_te), warp_param)[0]

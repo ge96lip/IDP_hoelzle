@@ -42,19 +42,18 @@ def get_args():
 args = get_args()
 # The rest of your code where you use map_roi
 
-project_dir = "/Users/carlottaholzle/Desktop/SS2024/IDP/"
 data_dir = args.data_dir
 out_dir = args.out_dir
 os.makedirs(out_dir, exist_ok=True)
 # make analysis folder 
 os.makedirs(os.path.join(out_dir, "analysis"), exist_ok=True)
 
-data = pd.read_csv(os.path.join(data_dir, "data_merged.csv"))
+data = pd.read_csv(os.path.join(data_dir , 'data_merged.csv'))
 
 # specific to chair's dataset: 
 if args.drop_columns: 
     columns_to_drop = data.columns[2:6]
-    df_train = data.drop(columns_to_drop, axis=1)
+    data = data.drop(columns_to_drop, axis=1)
 
 valid_dx = ['AD', 'MCI', 'CN']
 data = data[data['DX'].isin(valid_dx)]
@@ -63,7 +62,11 @@ data = data[data['DX'].isin(valid_dx)]
 data.loc[:, 'PTGENDER'] = data['PTGENDER'].map({'Male': 0, 'Female': 1})
 
 df_train = data[data['DX'].isin(['CN'])]
+# if only ukb data should be used for training: 
+# df_train = df_train[df_train['set'].isin(['ukb'])]
+
 df_patients = data[data['DX'].isin(['AD'])]
+df_ad = data[data['DX'].isin(['CN'])]
 
 # test with full data 
 df_test = data
@@ -71,17 +74,18 @@ df_test = data
 df_test.reset_index(drop=True, inplace=True)
 df_patients.reset_index(drop=True, inplace=True)
 df_train.reset_index(drop=True, inplace=True)
-
-
+df_ad.reset_index(drop=True, inplace=True)
 # get the sites from the current dataset
 
 df_test['sitenum'] = 0
 df_patients['sitenum'] = 0
 df_train['sitenum'] = 0
+df_ad['sitenum'] = 0
 
 site_ids_te = df_test["set"].unique()
 site_ids_patients = df_patients["set"].unique()
 site_ids_tr = df_train["set"].unique()
+site_ids_ad = df_ad["set"].unique()
 
 print("Test Set: ")
 site_to_sitenum = {}
@@ -96,8 +100,9 @@ for i, s in enumerate(site_ids_te):
 df_patients['sitenum'] = df_patients['set'].map(site_to_sitenum).fillna(-1).astype(int)
 # Assign sitenum in patients set based on train set mapping
 df_train['sitenum'] = df_train['set'].map(site_to_sitenum).fillna(-1).astype(int)
+df_ad['sitenum'] = df_ad['set'].map(site_to_sitenum).fillna(-1).astype(int)
 
-print("All Data Set: ")
+print("Train Set: ")
 for s in site_ids_tr:
     idx = df_train['set'] == s
     print('site', s, sum(idx), "sitenum: ", df_train.loc[idx, 'sitenum'].iloc[0])
@@ -138,6 +143,7 @@ all_data_features['set'] = df_train['set']
 all_data_covariates = df_train[cols_cov]
 
 X_train, X_test, y_train, y_test = train_test_split(all_data_covariates, all_data_features, stratify=df_train['set'], test_size=0.2, random_state=42)
+print(X_train.shape)
 
 X_train.reset_index(drop=True, inplace=True)
 X_test.reset_index(drop=True, inplace=True)
@@ -471,7 +477,7 @@ print("\n\n\n Starting evaluation on full data:")
 # Test on all data: 
 suffix = "alldata"
 
-df_ad = None
+df_ad = df_test
 columns_to_drop = df_test.columns[2:]
 df_clean = df_test.drop(columns_to_drop, axis=1)
 B = create_bspline_basis(xmin, xmax)
@@ -483,17 +489,32 @@ for roi in idp_ids:
     # create output dir
     os.makedirs(os.path.join(roi_dir,'blr'), exist_ok=True)
     # load train & test covariate data matrices
-    
     X_te = df_clean
 
     X_te = np.concatenate((X_te, np.ones((X_te.shape[0],1))), axis=1)
-    # np.savetxt(os.path.join(roi_dir, 'cov_int_te' + suffix + '.txt'), X_te)
-
     # create Bspline basis set
     Phis = np.array([B(i) for i in X_te[:,0]])
     X_te = np.concatenate((X_te, Phis), axis=1)
     np.savetxt(os.path.join(roi_dir, 'cov_bspline_te'+ suffix + '.txt'), X_te)
 
+columns_to_drop = df_ad.columns[2:]
+df_clean = df_ad.drop(columns_to_drop, axis=1)
+B = create_bspline_basis(xmin, xmax)
+for roi in idp_ids:
+    print('Creating basis expansion for ROI:', roi)
+    roi_dir = os.path.join(out_dir, roi)
+    os.chdir(roi_dir)
+    # create output dir
+    os.makedirs(os.path.join(roi_dir,'blr'), exist_ok=True)
+    # load train & test covariate data matrices
+    X_ad = df_clean
+
+    X_ad = np.concatenate((X_ad, np.ones((X_ad.shape[0],1))), axis=1)
+    # create Bspline basis set
+    Phis = np.array([B(i) for i in X_ad[:,0]])
+    X_ad = np.concatenate((X_ad, Phis), axis=1)
+    np.savetxt(os.path.join(roi_dir, 'cov_bspline_ad.txt'), X_ad)
+    
 for idp_num, idp in enumerate(idp_ids): 
     print('Running IDP', idp_num, idp, ':')
     idp_dir = os.path.join(out_dir, idp)
@@ -520,8 +541,35 @@ for idp_num, idp in enumerate(idp_ids):
                                     outputsuffix='alldata')
     else:
         print('Some sites missing from the training data. Not implemented please refer to eval.py file.')
+        
+        
+        cov_file_ad = os.path.join(idp_dir, 'cov_bspline_ad.txt')
+        
+        X_ad = load_2d(cov_file_ad)
+        
+        # save the responses for the adaptation data
+        resp_file_ad = os.path.join(idp_dir, 'resp_ad.txt')
+        y_ad = df_ad[idp].to_numpy()
+        np.savetxt(resp_file_ad, y_ad)
 
-        exit
+        # save the site ids for the adaptation data
+        sitenum_file_ad = os.path.join(idp_dir, 'sitenum_ad.txt')
+        site_num_ad = df_ad['sitenum'].to_numpy(dtype=int)
+        np.savetxt(sitenum_file_ad, site_num_ad)
+
+        # save the site ids for the test data
+        sitenum_file_te = os.path.join(idp_dir, 'sitenum_te.txt')
+        site_num_te = df_test['sitenum'].to_numpy(dtype=int)
+        np.savetxt(sitenum_file_te, site_num_te)
+        yhat_te, s2_te, Z = predict(cov_file_te,
+                                    alg = 'blr',
+                                    respfile = resp_file_te,
+                                    model_path = os.path.join(idp_dir,'Models'),
+                                    adaptrespfile = resp_file_ad,
+                                    adaptcovfile = cov_file_ad,
+                                    adaptvargroupfile = sitenum_file_ad,
+                                    testvargroupfile = sitenum_file_te, 
+                                    outputsuffix = 'alldata')
 
 # Extract unique set values
 site_names = df_test['set'].unique()
@@ -613,10 +661,6 @@ def color_gradient(x=0.0, start=(0, 0, 0), stop=(1, 1, 1)):
 
 plt.figure(dpi=380)
 
-# Reorder the DataFrame to ensure the desired order
-# blr_site_metrics['set'] = pd.Categorical(blr_site_metrics['set'], categories=['set_adni', 'set_aibl', 'set_delcode', 'set_jadni', 'set_ukb'], ordered=True)
-# blr_site_metrics = blr_site_metrics.sort_values('set')
-
 fig, axes = joypy.joyplot(blr_site_metrics, column=['EV'], overlap=2.5, by="set", ylim='own', fill=True, figsize=(8, 8),
                           legend=False, xlabels=True, ylabels=True, colormap=lambda x: color_gradient(x, start=(.08, .45, .8), stop=(.8, .34, .44)),
                           alpha=0.6, linewidth=.5, linecolor='w', fade=True)
@@ -706,14 +750,14 @@ dx_ordered = selected_rows['DX'].astype(pd.CategoricalDtype(categories=["CN", "M
 # Calculate Spearman and Kendall correlation
 spearman_corr, _ = spearmanr(dx_ordered, selected_rows['ROI'])
 kendall_corr, _ = kendalltau(dx_ordered, selected_rows['ROI'])
-
+print(spearman_corr)
 
 res_stats = {
         'spearman': spearman_corr,
         'kendall': kendall_corr
     }
 res_stats_df = pd.DataFrame([res_stats])
-
+print(res_stats_df)
 print("Correlation statistics: ", res_stats)
 output_file = os.path.join(out_dir, "analysis",f'correlation_alldata.csv')
 
@@ -789,7 +833,7 @@ results_count = results_count[cols]
 
 # Save results to a CSV file
 results_count.to_csv(os.path.join(out_dir, 'analysis',f'Perc_{suffix}_l-2.csv'), index=False)
-
+print(results_count)
 
 # Define the directory structure
 norm_curves_dir = os.path.join(out_dir, 'analysis', 'norm_curves')
@@ -800,110 +844,9 @@ female_dir = os.path.join(norm_curves_dir, 'female')
 os.makedirs(male_dir, exist_ok=True)
 os.makedirs(female_dir, exist_ok=True)
 
-"""
-
 def save_plots(sex, output_dir):
-    xmin = 30
-    xmax = 100
-    if sex == 1:
-        clr = 'red'
-    else:
-        clr = 'blue'
-
-    # Create dummy data for visualization
-    xx = np.arange(xmin, xmax, 0.5)
-    X0_dummy = np.zeros((len(xx), 2))
-    X0_dummy[:, 0] = xx
-    X0_dummy[:, 1] = sex
-    X_dummy = create_design_matrix(X0_dummy, xmin=xmin, xmax=xmax, site_ids=None, all_sites=None)
-    cov_file_dummy = os.path.join(out_dir, 'cov_bspline_dummy_mean.txt')
-    np.savetxt(cov_file_dummy, X_dummy)
-    sns.set(style='whitegrid')
-    X_te = create_design_matrix(df_patients[cols_cov],
-                                site_ids=df_patients['set'],
-                                all_sites=site_ids_tr,
-                                basis='bspline',
-                                xmin=xmin,
-                                xmax=xmax)
-
-    for idp_num, idp in enumerate(idp_ids):
-        idp_dir = os.path.join(out_dir, idp)
-        os.chdir(idp_dir)
-        yhat_te = load_2d(os.path.join(idp_dir, 'yhat_' + suffix + '.txt'))
-        s2_te = load_2d(os.path.join(idp_dir, 'ys2_' + suffix + '.txt'))
-        y_te = load_2d(os.path.join(idp_dir, 'resp_te.txt'))
-        yhat, s2 = predict(cov_file_dummy, alg='blr', respfile=None, model_path=os.path.join(idp_dir, 'Models'), outputsuffix='_dummy')
-        
-        with open(os.path.join(idp_dir, 'Models', 'NM_0_0_estimate.pkl'), 'rb') as handle:
-            nm = pickle.load(handle)
-        
-        W = nm.blr.warp
-        warp_param = nm.blr.hyp[1:nm.blr.warp.get_n_params() + 1]
-        med_te = W.warp_predictions(np.squeeze(yhat_te), np.squeeze(s2_te), warp_param)[0]
-        med_te = med_te[:, np.newaxis]
-        evaluate(y_te, med_te)
-        med, pr_int = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param)
-        beta, _, _ = nm.blr._parse_hyps(nm.blr.hyp, X_dummy)
-        s2n = 1 / beta
-        s2s = s2 - s2n
-        y_te_rescaled_all = np.zeros_like(y_te)
-        for sid, site in enumerate(site_ids_te):
-            if all(elem in site_ids_tr for elem in site_ids_te):
-                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, X_te[:, sid + len(cols_cov) + 1] != 0))[0]
-                if len(idx) == 0:
-                    continue
-                idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
-                y_te_rescaled = df_test[idp][idx]
-            else:
-                idx = np.where(np.bitwise_and(X_te[:, 2] == sex, (df_patients['set'] == site).to_numpy()))[0]
-                y_ad = load_2d(os.path.join(idp_dir, 'resp_ad.txt'))
-                X_ad = load_2d(os.path.join(idp_dir, 'cov_bspline_ad.txt'))
-                idx_a = np.where(np.bitwise_and(X_ad[:, 2] == sex, (df_ad['set'] == site).to_numpy()))[0]
-                if len(idx) < 2 or len(idx_a) < 2:
-                    continue
-                y_te_rescaled, s2_rescaled = nm.blr.predict_and_adjust(nm.blr.hyp, X_ad[idx_a, :], np.squeeze(y_ad[idx_a]), Xs=None, ys=np.squeeze(y_te[idx]))
-                idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
-                y_te_rescaled = y_te_rescaled + np.median(y_te[idx]) - np.median(med[idx_dummy])
-
-            #plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
-
-        scale_factor = np.median(y_te) / np.median(med)
-        med_scaled = med * scale_factor
-        pr_int_scaled = [pi * scale_factor for pi in pr_int]
-        plt.plot(xx, med_scaled, clr)
-        junk, pr_int25 = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param, percentiles=[0.25, 0.75])
-        junk, pr_int95 = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2), warp_param, percentiles=[0.05, 0.95])
-        pr_int25_scaled = np.array([pi * scale_factor for pi in pr_int25])
-        pr_int95_scaled = np.array([pi * scale_factor for pi in pr_int95])
-        plt.fill_between(xx, pr_int25_scaled[:, 0], pr_int25_scaled[:, 1], alpha=0.1, color=clr)
-        plt.fill_between(xx, pr_int95_scaled[:, 0], pr_int95_scaled[:, 1], alpha=0.1, color=clr)
-        junk, pr_int25l = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 - 0.5 * s2s), warp_param, percentiles=[0.25, 0.75])
-        junk, pr_int95l = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 - 0.5 * s2s), warp_param, percentiles=[0.05, 0.95])
-        pr_int25l_scaled = np.array([pi * scale_factor for pi in pr_int25l])
-        pr_int95l_scaled = np.array([pi * scale_factor for pi in pr_int95l])
-        junk, pr_int25u = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 + 0.5 * s2s), warp_param, percentiles=[0.25, 0.75])
-        junk, pr_int95u = W.warp_predictions(np.squeeze(yhat), np.squeeze(s2 + 0.5 * s2s), warp_param, percentiles=[0.05, 0.95])
-        pr_int25u_scaled = np.array([pi * scale_factor for pi in pr_int25u])
-        pr_int95u_scaled = np.array([pi * scale_factor for pi in pr_int95u])
-        plt.fill_between(xx, pr_int25l_scaled[:, 0], pr_int25u_scaled[:, 0], alpha=0.3, color=clr)
-        plt.fill_between(xx, pr_int95l_scaled[:, 0], pr_int95u_scaled[:, 0], alpha=0.3, color=clr)
-        plt.fill_between(xx, pr_int25l_scaled[:, 1], pr_int25u_scaled[:, 1], alpha=0.3, color=clr)
-        plt.fill_between(xx, pr_int95l_scaled[:, 1], pr_int95u_scaled[:, 1], alpha=0.3, color=clr)
-        plt.plot(xx, pr_int25_scaled[:, 0], color=clr, linewidth=0.5)
-        plt.plot(xx, pr_int25_scaled[:, 1], color=clr, linewidth=0.5)
-        plt.plot(xx, pr_int95_scaled[:, 0], color=clr, linewidth=0.5)
-        plt.plot(xx, pr_int95_scaled[:, 1], color=clr, linewidth=0.5)
-
-        plt.xlabel('Age')
-        plt.ylabel(idp)
-        plt.title(idp)
-        plt.xlim((50, 90))
-        plt.savefig(os.path.join(output_dir, f'centiles_{idp}_noPATIONS.png'), bbox_inches='tight')
-        plt.close()"""
-
-def save_plots(sex, output_dir):
-    xmin = 30
-    xmax = 100
+    xmin = 40
+    xmax = 90
     if sex == 1:
         clr = 'red'
     else:
@@ -926,12 +869,11 @@ def save_plots(sex, output_dir):
     # Create the design matrix using the sampled DataFrame
     X_te = create_design_matrix(df_patients[cols_cov],
                                 site_ids=df_patients['set'],
-                                all_sites=site_ids_tr,
+                                all_sites=site_ids_te,
                                 basis='bspline',
                                 xmin=xmin,
                                 xmax=xmax)
-    
-    print(X_te.shape)
+
     plt.figure(figsize=(15, 6))
 
     for idp_num, idp in enumerate(idp_ids):
@@ -959,7 +901,6 @@ def save_plots(sex, output_dir):
         beta, _, _ = nm.blr._parse_hyps(nm.blr.hyp, X_dummy)
         s2n = 1 / beta
         s2s = s2 - s2n
-        y_te_rescaled_all = np.zeros_like(y_te)
         for sid, site in enumerate(site_ids_te):
             if all(elem in site_ids_tr for elem in site_ids_te):
                 idx = np.where(np.bitwise_and(X_te[:, 2] == sex, X_te[:, sid + len(cols_cov) + 1] != 0))[0]
@@ -977,7 +918,7 @@ def save_plots(sex, output_dir):
                 y_te_rescaled, s2_rescaled = nm.blr.predict_and_adjust(nm.blr.hyp, X_ad[idx_a, :], np.squeeze(y_ad[idx_a]), Xs=None, ys=np.squeeze(y_te[idx]))
                 idx_dummy = np.bitwise_and(X_dummy[:, 1] > X_te[idx, 1].min(), X_dummy[:, 1] < X_te[idx, 1].max())
                 y_te_rescaled = y_te_rescaled # + np.median(y_te[idx]) - np.median(med[idx_dummy])
-
+            # comment out if the patients should not be plotted in the graph: 
             plt.scatter(X_te[idx, 1], y_te_rescaled, s=4, color=clr, alpha=0.1)
 
         scale_factor = np.median(y_te) / np.median(med)
@@ -1007,6 +948,7 @@ def save_plots(sex, output_dir):
         plt.plot(xx, pr_int95_scaled[:, 0], color=clr, linewidth=0.5)
         plt.plot(xx, pr_int95_scaled[:, 1], color=clr, linewidth=0.5)
 
+        # for saving each plot individually 
         """plt.xlabel('Age')
         plt.ylabel(idp)
         plt.title(idp)
@@ -1023,6 +965,7 @@ def save_plots(sex, output_dir):
     plt.close()
 
 save_plots(0, male_dir)  # For males
+
 save_plots(1, female_dir)  # For females
 
 os.chdir(out_dir)
