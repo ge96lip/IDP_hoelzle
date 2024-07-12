@@ -65,6 +65,11 @@ if args.only_ukb:
     df_train = df_train[df_train['set'].isin(['ukb'])]
 
 df_patients = data[data['DX'].isin(['AD'])]
+
+# This is only needed when the training set includes less or different sites than the later test set. The df_ad will be used to adapt the model dimensions to the 
+# new dimensions of the test set. 
+# It is advisable to use data for constructing this matrix which is not used during training nor testing. In some cases this is not possible, therefore only the 
+# healthy data points were used to not include patient data points in the training / refitting process. 
 df_ad = data[data['DX'].isin(['CN'])]
 
 # test with full data 
