@@ -29,14 +29,12 @@ def get_args():
     parser.add_argument('--idp_ids', type=str, default="['lh_entorhinal_thickness','lh_inferiortemporal_thickness','lh_middletemporal_thickness','lh_inferiorparietal_thickness','lh_fusiform_thickness']")
     parser.add_argument('--drop_columns', type=bool, default=True)
     parser.add_argument('--cols_cov', type=str, default="['AGE','PTGENDER']")
-
+    parser.add_argument('--only_ukb', type=bool, default=False)
     
     args = parser.parse_args()
     # Convert the map_roi string to a dictionary
     args.idp_ids = ast.literal_eval(args.idp_ids)
     args.cols_cov = ast.literal_eval(args.cols_cov)
-
-    
     return args
 
 args = get_args()
@@ -63,7 +61,8 @@ data.loc[:, 'PTGENDER'] = data['PTGENDER'].map({'Male': 0, 'Female': 1})
 
 df_train = data[data['DX'].isin(['CN'])]
 # if only ukb data should be used for training: 
-# df_train = df_train[df_train['set'].isin(['ukb'])]
+if args.only_ukb: 
+    df_train = df_train[df_train['set'].isin(['ukb'])]
 
 df_patients = data[data['DX'].isin(['AD'])]
 df_ad = data[data['DX'].isin(['CN'])]
@@ -419,6 +418,25 @@ residual_all= pd.DataFrame(residual_all, index=df.index, columns=idp_ids)
 
 residual_all = pd.concat([df[['set']], residual_all], axis=1)
 
+# merge the predictions to one dataframe 
+preds = {}
+# Load the prediction for each idp_id
+for col in idp_ids:
+    preds_path = os.path.join(out_dir, f'{col}/yhat_{suffix}.txt')
+    preds[col] = np.loadtxt(preds_path)
+    
+preds_df = pd.DataFrame(preds)
+# Ensure the preds DataFrame has the same index as data
+preds_df.index = df.index
+
+# Combine the set and DX columns with the Z-scores
+preds_df = pd.concat([df[['set']], preds_df], axis=1)
+
+output_file = os.path.join(out_dir, "analysis",f'preds_{suffix}.csv')
+
+# Save the results to a CSV file
+preds_df.to_csv(output_file, index=False)
+
 # merge the Z-scores to one dataframe 
 z_scores = {}
 # Load the Z-scores for each idp_id
@@ -434,7 +452,7 @@ z_scores_df.index = df.index
 # Combine the set and DX columns with the Z-scores
 combined_df = pd.concat([df[['set']], z_scores_df], axis=1)
 
-output_file = os.path.join(out_dir, "analysis",f'Z_score_{suffix}.txt')
+output_file = os.path.join(out_dir, "analysis",f'Z_score_{suffix}.csv')
 
 # Save the results to a CSV file
 combined_df.to_csv(output_file, index=False)
@@ -712,8 +730,26 @@ residual_all = pd.DataFrame(residual_all, index=df_test.index, columns=idp_ids)
 
 residual_all = pd.concat([df_test[['set', 'DX']], residual_all], axis=1)
 numerical_cols = residual_all.columns.difference(['set', 'DX'])
-# merge the Z-scores to one dataframe 
 
+preds = {}
+# Load the prediction for each idp_id
+for col in idp_ids:
+    preds_path = os.path.join(out_dir, f'{col}/yhat_{suffix}.txt')
+    preds[col] = np.loadtxt(preds_path)
+
+preds_df = pd.DataFrame(preds)
+# Ensure the preds DataFrame has the same index as data
+preds_df.index = df_test.index
+
+# Combine the set and DX columns with the Z-scores
+preds = pd.concat([df_test[['set', 'DX']], preds_df], axis=1)
+
+output_file = os.path.join(out_dir, "analysis",f'preds_alldata.csv')
+
+# Save the results to a CSV file
+preds.to_csv(output_file, index=False)
+
+# merge the Z-scores to one dataframe 
 z_scores = {}
 # Load the Z-scores for each idp_id
 for col in idp_ids:
@@ -728,7 +764,7 @@ z_scores_df.index = df_test.index
 # Combine the set and DX columns with the Z-scores
 z_scores = pd.concat([df_test[['set', 'DX']], z_scores_df], axis=1)
 
-output_file = os.path.join(out_dir, "analysis",f'Z_score_alldata.txt')
+output_file = os.path.join(out_dir, "analysis",f'Z_score_alldata.csv')
 
 # Save the results to a CSV file
 z_scores.to_csv(output_file, index=False)
