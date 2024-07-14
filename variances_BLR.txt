@@ -1,0 +1,117 @@
+# epi = epistemic (model) uncertainty 
+# ale = aleatoric (data) uncertainty
+
+### pretrained BLR:
+
+Female: 
+
+L Entorhinal
+mean yhat is:  10.107367806032483
+mean variance is:  1.9133688170251455
+mean ale:  1.8366378972839172
+mean epi:  0.07673091974122835
+L Inferiortemporal 
+mean yhat is:  17.388172117420623
+mean variance is:  2.6585803319143486
+mean ale:  2.5750144492769804
+mean epi:  0.08356588263736825
+L Middletemporal
+mean yhat is:  16.592232323171157
+mean variance is:  2.612442399057047
+mean ale:  2.529254525587946
+mean epi:  0.08318787346910092
+L Inferiorparietal
+mean yhat is:  15.817600193224763
+mean variance is:  2.7439627737803254
+mean ale:  2.659712568357749
+mean epi:  0.08425020542257648
+L Fusiform
+mean yhat is:  18.0692639944621
+mean variance is:  2.7366539569333916
+mean ale:  2.6524521091861444
+mean epi:  0.08420184774724733
+
+Male 
+
+L Entorhinal 
+mean yhat is:  10.13650847988689
+mean variance is:  1.9133948984847815
+mean ale:  1.8366378972839172
+mean epi:  0.07675700120086429
+L Inferiortemporal 
+mean yhat is:  17.484748437338055
+mean variance is:  2.658612284645703
+mean ale:  2.5750144492769804
+mean epi:  0.08359783536872294
+L Middletemporal 
+mean yhat is:  16.709271169901825
+mean variance is:  2.6124740479405366
+mean ale:  2.529254525587946
+mean epi:  0.08321952235259071
+L Inferiorparietal
+mean yhat is:  15.570352455851427
+mean variance is:  2.7439953857957295
+mean ale:  2.659712568357749
+mean epi:  0.08428281743798029
+L Fusiform
+mean yhat is:  17.9467418689508
+mean variance is:  2.736686806418064
+mean ale:  2.6524521091861444
+mean epi:  0.08423469723191968
+
+### not pretrained BLR:
+
+Female
+
+L Entorhinal
+mean yhat is:  0.7152638206484174
+mean variance:  0.41573951606950355
+mean ale:  0.12166581312676833
+mean epi:  0.29407370294273516
+L Inferiortemporal
+mean yhat is:  0.9958734455609197
+mean variance:  0.17456253555815102
+mean ale:  0.02571881009926375
+mean epi:  0.14884372545888724
+L Middletemporal
+mean yhat is:  0.018138996100771805
+mean variance:  0.17604750283694826
+mean ale:  0.02347443989117687
+mean epi:  0.15257306294577141
+L Inferiorparietal
+mean yhat is:  3.5755328186157045
+mean variance:  0.12409569989898386
+mean ale:  0.01653856847581093
+mean epi:  0.10755713142317294
+L Fusiform
+mean yhat is:  1.2450677073771022
+mean variance:  0.15681481499810285
+mean ale:  0.01896319242025249
+mean epi:  0.13785162257785033
+
+Male
+L Entorhinal
+mean yhat is:  2.024424548712008
+mean variance:  0.8496469482305601
+mean ale:  0.12166581312676833
+mean epi:  0.7279811351037918
+L Inferiortemporal
+mean yhat is:  1.979511794514792
+mean variance:  0.4445172614401487
+mean ale:  0.02571881009926375
+mean epi:  0.418798451340885
+L Middletemporal
+mean yhat is:  1.0966015664825877
+mean variance:  0.45680045058366864
+mean ale:  0.02347443989117687
+mean epi:  0.43332601069249177
+L Inferiorparietal
+mean yhat is:  4.4709124743286885
+mean variance:  0.32202762065713
+mean ale:  0.01653856847581093
+mean epi:  0.30548905218131905
+L Fusiform
+mean yhat is:  2.2283028372691054
+mean variance:  0.41360984321212263
+mean ale:  0.01896319242025249
+mean epi:  0.39464665079187017
